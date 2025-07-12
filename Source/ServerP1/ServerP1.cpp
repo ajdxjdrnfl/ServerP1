@@ -4,6 +4,8 @@
 #include "Modules/ModuleManager.h"
 #include "Serialization/ArrayWriter.h"
 #include "Sockets.h"
+#include "Kismet/GameplayStatics.h"
+#include "MyGameInstance.h"
 
 IMPLEMENT_PRIMARY_GAME_MODULE( FDefaultGameModuleImpl, ServerP1, "ServerP1" );
 
@@ -48,7 +50,6 @@ void PacketSession::Run()
 
 void PacketSession::Recv()
 {
-
 }
 
 void PacketSession::HandleRecvPackets()
@@ -78,14 +79,50 @@ void PacketSession::HandleServerPacket(TArray<uint8>& Packet)
 	if (!bServer)
 		return;
 
+  FPacketHeader* header = reinterpret_cast<FPacketHeader*>(Packet.GetData());
+  auto pktId = header->PacketID;
+  
+  UMyGameInstance *gameInstance = Cast<UMyGameInstance>(UGameplayStatics::GetGameInstance(GWorld));
+  
+  
 }
 
 void PacketSession::HandleClientPacket(TArray<uint8>& Packet)
 {
 	if (bServer)
 		return;
+  
+  FPacketHeader* header = reinterpret_cast<FPacketHeader*>(Packet.GetData());
+  auto pktId = header->PacketID;
+  
+  UMyGameInstance *gameInstance = Cast<UMyGameInstance>(UGameplayStatics::GetGameInstance(GWorld));
+  
+  switch(pktId)
+  {
+    case EPacketType::Lockstep:
+    {
+      gameInstance->HandleLockstep();
+    }
+      break;
 
+    case EPacketType::Snapshot:
+    {
+      gameInstance->HandleSnapshot();
+    }
+      break;
 
+    case EPacketType::Sync:
+    {
+      gameInstance->HandleSync();
+    }
+      break;
+      
+    case EPacketType::Ack:
+    {
+      
+    }
+      break;
+  }
 	
 }
 
