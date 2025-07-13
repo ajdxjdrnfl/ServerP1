@@ -16,6 +16,8 @@ USING_SHARED_PTR(PacketSession);
 #define GET_SESSION()															\
 	Cast<UMyGameInstance>(GWorld->GetGameInstance())->mySession;
 
+#define BYTE uint8
+
 class FSocket;
 
 	enum EMySocketType
@@ -66,7 +68,7 @@ class FSocket;
 	struct  FMyState
 	{
 		FVector position;
-		FRotator rotation;
+    FQuat rotation;
 		FVector velocity;
 	};
 
@@ -84,12 +86,16 @@ class FSocket;
 
 		virtual void Serialize(uint8* ptr)
 		{
-			
+      FLockstepPacket* packet = reinterpret_cast<FLockstepPacket*>(ptr);
+      packet->nSeq = nSeq;
+      packet->input = input;
 		}
 
 		virtual void Deserialize(uint8* ptr)
 		{
-
+      FLockstepPacket* packet = reinterpret_cast<FLockstepPacket*>(ptr);
+      nSeq = packet->nSeq;
+      input = packet->input;
 		}
 
 		virtual uint16 ByteSize() 
@@ -106,15 +112,71 @@ class FSocket;
 		uint16 nStateSize;
 		TArray<FMyState> states;
 
-		virtual void Serialize(uint8* ptr) 
-		{
-			
-		}
+    virtual void Serialize(uint8* ptr)
+       {
+           uint8* cursor = ptr;
 
-		virtual void Deserialize(uint8* ptr)
-		{
+           // Sequence number
+           *reinterpret_cast<uint16*>(cursor) = nSeq;
+           cursor += sizeof(uint16);
 
-		}
+           // Input count
+           *reinterpret_cast<uint16*>(cursor) = nInputSize;
+           cursor += sizeof(uint16);
+
+           // Inputs
+           for (const FMyInput& input : inputs)
+           {
+               FMemory::Memcpy(cursor, &input, sizeof(FMyInput));
+               cursor += sizeof(FMyInput);
+           }
+
+           // State count
+           *reinterpret_cast<uint16*>(cursor) = nStateSize;
+           cursor += sizeof(uint16);
+
+           // States
+           for (const FMyState& state : states)
+           {
+               FMemory::Memcpy(cursor, &state, sizeof(FMyState));
+               cursor += sizeof(FMyState);
+           }
+       }
+
+       // Deserialize a packet from a binary buffer
+       virtual void Deserialize(uint8* ptr)
+       {
+           const uint8* cursor = ptr;
+
+           // Sequence number
+           nSeq = *reinterpret_cast<const uint16*>(cursor);
+           cursor += sizeof(uint16);
+
+           // Input count
+           nInputSize = *reinterpret_cast<const uint16*>(cursor);
+           cursor += sizeof(uint16);
+
+           // Inputs
+           inputs.SetNum(nInputSize);
+           for (int i = 0; i < nInputSize; ++i)
+           {
+               FMemory::Memcpy(&inputs[i], cursor, sizeof(FMyInput));
+               cursor += sizeof(FMyInput);
+           }
+
+           // State count
+           nStateSize = *reinterpret_cast<const uint16*>(cursor);
+           cursor += sizeof(uint16);
+
+           // States
+           states.SetNum(nStateSize);
+           for (int i = 0; i < nStateSize; ++i)
+           {
+               FMemory::Memcpy(&states[i], cursor, sizeof(FMyState));
+               cursor += sizeof(FMyState);
+           }
+       }
+
 
 		virtual uint16 ByteSize()
 		{
@@ -130,24 +192,47 @@ class FSocket;
 		uint16 nStateSize;
 		TArray<FMyState> states;
 
-		virtual void Serialize(uint8* ptr)
-		{
-			FSnapshotPacket* packet = reinterpret_cast<FSnapshotPacket*>(ptr);
-			packet->nSeq = nSeq;
-			packet->nStateSize = nStateSize;
-			
-			
-		}
+    virtual void Serialize(uint8* ptr)
+      {
+        uint8* cursor = ptr;
 
-		virtual void Deserialize(uint8* ptr)
-		{
-			FSnapshotPacket* packet = reinterpret_cast<FSnapshotPacket*>(ptr);
+        // Serialize sequence number
+        *reinterpret_cast<uint16*>(cursor) = nSeq;
+        cursor += sizeof(uint16);
 
-			nSeq = packet->nSeq;
-			nStateSize = packet->nStateSize;
+        // Serialize number of states
+        *reinterpret_cast<uint16*>(cursor) = nStateSize;
+        cursor += sizeof(uint16);
 
+        // Serialize each state
+        for (const FMyState& state : states)
+        {
+          FMemory::Memcpy(cursor, &state, sizeof(FMyState));
+          cursor += sizeof(FMyState);
+        }
+      }
 
-		}
+      virtual void Deserialize(uint8* ptr)
+      {
+        const uint8* cursor = ptr;
+
+        // Read sequence number
+        nSeq = *reinterpret_cast<const uint16*>(cursor);
+        cursor += sizeof(uint16);
+
+        // Read number of states
+        nStateSize = *reinterpret_cast<const uint16*>(cursor);
+        cursor += sizeof(uint16);
+
+        // Read states
+        states.SetNum(nStateSize);
+        for (int i = 0; i < nStateSize; ++i)
+        {
+          FMemory::Memcpy(&states[i], cursor, sizeof(FMyState));
+          cursor += sizeof(FMyState);
+        }
+      }
+
 
 		virtual uint16 ByteSize()
 		{
@@ -166,9 +251,8 @@ class FSocket;
 			packet->nAck = nAck;
 		}
 
-		virtual void Deserialize()
+		virtual void Deserialize(uint8* ptr)
 		{
-
 		}
 
 		virtual uint16 ByteSize()
@@ -270,13 +354,13 @@ public:
 	static SendBufferRef MakeSendBuffer(T& pkt, uint16 pktId)
 	{
 		const uint16 dataSize = static_cast<uint16>(pkt.ByteSizeLong());
-		const uint16 packetSize = dataSize + sizeof(PacketHeader);
+		const uint16 packetSize = dataSize + sizeof(FPacketHeader);
 
 		SendBufferRef sendBuffer = MakeShared<SendBuffer>(packetSize);
 
-		PacketHeader* header = reinterpret_cast<PacketHeader*>(sendBuffer->Buffer());
-		header->size = packetSize;
-		header->id = pktId;
+		FPacketHeader* header = reinterpret_cast<FPacketHeader*>(sendBuffer->Buffer());
+		header->PacketSize = packetSize;
+		header->PacketID = pktId;
 
 		switch (pktId)
 		{

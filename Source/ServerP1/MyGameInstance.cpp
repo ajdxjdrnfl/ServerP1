@@ -35,7 +35,6 @@ void UMyGameInstance::InitSocket(bool bServer)
 		gameMode->SpawnCubePawn();
 		gameMode->SpawnCubes();
 	}
-
 }
 
 void UMyGameInstance::SendPacket(SendBufferRef buffer)
