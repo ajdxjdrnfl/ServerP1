@@ -29,12 +29,15 @@ public:
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
-private:
+public:
 	void MoveVertical(float Value);
 	void MoveHorizontal(float Value);
 
 	void Jump();
 	bool CheckGrounded();
+
+public:
+	void DoSyncState();
 
 public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite)
@@ -56,4 +59,13 @@ public:
 public:
 	UFUNCTION()
 	void OnHit(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
+	
+public:
+	void InputVertical(float Value);
+	void InputHorizontal(float Value);
+	void InputJump();
+
+	FMyInput GetCurInput();
+	void ClearInput();
+	FMyInput curInput;
 };

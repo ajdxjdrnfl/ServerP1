@@ -29,12 +29,16 @@ public:
 
 	// HandlePacket
 public:
-	void HandleLockstep();
-	void HandleSnapshot();
-	void HandleSync();
+	void HandleLockstep(FLockstepPacket* pkt);
+	void HandleSnapshot(FSnapshotPacket* pkt);
+	void HandleSync(FSyncPacket* pkt);
+	void HandleAck(FAckPacket* pkt);
 
+	int32 GetCurrentSeq(); // 반드시 MakeSendBuffer에서만 호출
+	bool IsServer() { return bIsServer; }
 public:
 	FSocket* Socket;
+	bool bIsServer = false;
 
 	FString IpAddress = TEXT("127.0.0.1");
 	int16 serverPort = 7777;
@@ -44,8 +48,4 @@ public:
 	int32 maxSize = 2 * 1024 * 1024;
 	
 	TSharedPtr<PacketSession> mySession;
-	void InsertInput();
-	void ApplyInput();
-
-	TQueue<FMyInput> qInput;
 };

@@ -41,17 +41,17 @@ void ACubePawn::BeginPlay()
 void ACubePawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-	
+
 }
 
 // Called to bind functionality to input
 void ACubePawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
-	/*
-	PlayerInputComponent->BindAxis("MoveForward", this, &ACubePawn::MoveVertical);
-	PlayerInputComponent->BindAxis("MoveRight", this, &ACubePawn::MoveHorizontal);
-	PlayerInputComponent->BindAction("Jump", IE_Pressed, this, &ACubePawn::Jump);
-	*/
+	
+	PlayerInputComponent->BindAxis("MoveForward", this, &ACubePawn::InputVertical);
+	PlayerInputComponent->BindAxis("MoveRight", this, &ACubePawn::InputHorizontal);
+	PlayerInputComponent->BindAction("Jump", IE_Pressed, this, &ACubePawn::InputJump);
+	
 }
 
 void ACubePawn::MoveVertical(float Value)
@@ -102,4 +102,37 @@ void ACubePawn::OnHit(UPrimitiveComponent* HitComp, AActor* OtherActor, UPrimiti
 	{
 		bCanJump = true;
 	}
+}
+
+FMyInput ACubePawn::GetCurInput()
+{
+	return curInput;
+}
+
+void ACubePawn::ClearInput()
+{
+	curInput.left = curInput.right = curInput.up = curInput.down = curInput.jump = false;
+}
+
+void ACubePawn::InputVertical(float Value)
+{
+	if (Value > 0.f)
+		curInput.up = true;
+	
+	if (Value < 0.f)
+		curInput.down = true;
+}
+
+void ACubePawn::InputHorizontal(float Value)
+{
+	if (Value > 0.f)
+		curInput.left = true;
+
+	if (Value < 0.f)
+		curInput.right = true;
+}
+
+void ACubePawn::InputJump()
+{
+	curInput.jump = true;
 }

@@ -50,6 +50,14 @@ void PacketSession::Run()
 
 void PacketSession::Recv()
 {
+
+}
+
+void PacketSession::PushRecvPacket(TArray<uint8>& RecvPacket)
+{
+	FPacketHeader* header = reinterpret_cast<FPacketHeader*>(RecvPacket.GetData());
+	auto pktId = header->PacketID;
+	
 }
 
 void PacketSession::HandleRecvPackets()
@@ -57,7 +65,7 @@ void PacketSession::HandleRecvPackets()
 	while (true)
 	{
 		TArray<uint8> Packet;
-		if (RecvPacketQueue.Dequeue(OUT Packet) == false)
+		if (RecvPacketQueue.Pop(OUT Packet) == false)
 			break;
 
 		PacketSessionRef ThisPtr = AsShared();
@@ -79,11 +87,19 @@ void PacketSession::HandleServerPacket(TArray<uint8>& Packet)
 	if (!bServer)
 		return;
 
-  FPacketHeader* header = reinterpret_cast<FPacketHeader*>(Packet.GetData());
-  auto pktId = header->PacketID;
+	FPacketHeader* header = reinterpret_cast<FPacketHeader*>(Packet.GetData());
+	auto pktId = header->PacketID;
   
-  UMyGameInstance *gameInstance = Cast<UMyGameInstance>(UGameplayStatics::GetGameInstance(GWorld));
-  
+	UMyGameInstance *gameInstance = Cast<UMyGameInstance>(UGameplayStatics::GetGameInstance(GWorld));
+	
+	switch (pktId)
+	{
+	case EPacketType::Ack:
+	{
+		FAckPacket* pkt = Cast<FAckPacket>(&header[1]);
+		gameInstance->HandleAck(pkt);
+	}
+	}
   
 }
 
@@ -92,34 +108,39 @@ void PacketSession::HandleClientPacket(TArray<uint8>& Packet)
 	if (bServer)
 		return;
   
-  FPacketHeader* header = reinterpret_cast<FPacketHeader*>(Packet.GetData());
-  auto pktId = header->PacketID;
+	FPacketHeader* header = reinterpret_cast<FPacketHeader*>(Packet.GetData());
+	auto pktId = header->PacketID;
   
-  UMyGameInstance *gameInstance = Cast<UMyGameInstance>(UGameplayStatics::GetGameInstance(GWorld));
+	UMyGameInstance *gameInstance = Cast<UMyGameInstance>(UGameplayStatics::GetGameInstance(GWorld));
   
-  switch(pktId)
+	
+	switch(pktId)
   {
     case EPacketType::Lockstep:
     {
-      gameInstance->HandleLockstep();
+		FLockstepPacket* pkt = Cast<FLockstepPacket>(&header[1]);
+		gameInstance->HandleLockstep(pkt);
     }
       break;
 
     case EPacketType::Snapshot:
     {
-      gameInstance->HandleSnapshot();
+		FSnapshotPacket* pkt = Cast<FSnapshotPacket>(&header[1]);
+		gameInstance->HandleSnapshot(pkt);
     }
       break;
 
     case EPacketType::Sync:
     {
-      gameInstance->HandleSync();
+		FSyncPacket* pkt = Cast<FSyncPacket>(&header[1]);
+		gameInstance->HandleSync(pkt);
     }
       break;
       
     case EPacketType::Ack:
     {
-      
+		FAckPacket* pkt = Cast<FAckPacket>(&header[1]);
+		gameInstance->HandleAck(pkt);
     }
       break;
   }
@@ -129,6 +150,7 @@ void PacketSession::HandleClientPacket(TArray<uint8>& Packet)
 void PacketSession::SendPacket(SendBufferRef SendBuffer)
 {
 	// 우선은 모아서 보내는거로,,
+	// UDP니까 바로 보내는거로 나중에 수정
 	SendPacketQueue.Enqueue(SendBuffer);
 }
 

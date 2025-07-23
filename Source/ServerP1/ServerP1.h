@@ -16,6 +16,9 @@ USING_SHARED_PTR(PacketSession);
 #define GET_SESSION()															\
 	Cast<UMyGameInstance>(GWorld->GetGameInstance())->mySession;
 
+#define GET_GAMEINSTANCE()															\
+	Cast<UMyGameInstance>(GWorld->GetGameInstance());
+
 #define BYTE uint8
 
 class FSocket;
@@ -68,8 +71,9 @@ class FSocket;
 	struct  FMyState
 	{
 		FVector position;
-    FQuat rotation;
+		FQuat rotation;
 		FVector velocity;
+		FVector angularVelocity;
 	};
 
 	struct IPacket
@@ -93,9 +97,9 @@ class FSocket;
 
 		virtual void Deserialize(uint8* ptr)
 		{
-      FLockstepPacket* packet = reinterpret_cast<FLockstepPacket*>(ptr);
-      nSeq = packet->nSeq;
-      input = packet->input;
+		FLockstepPacket* packet = reinterpret_cast<FLockstepPacket*>(ptr);
+		nSeq = packet->nSeq;
+		input = packet->input;
 		}
 
 		virtual uint16 ByteSize() 
@@ -243,11 +247,14 @@ class FSocket;
 
 	struct FAckPacket : public IPacket
 	{
+		uint16 nSeq;
 		uint16 nAck;
+		// nSeq랑 nAck는 똑같이
 
 		virtual void Serialize(uint8* ptr)
 		{
 			FAckPacket* packet = reinterpret_cast<FAckPacket*>(ptr);
+			packet->nSeq = nSeq;
 			packet->nAck = nAck;
 		}
 
@@ -267,6 +274,7 @@ class FSocket;
 		int64 seq;
 	};
 
+
 class SendBuffer : public TSharedFromThis<SendBuffer>	// 바로바로 보냄
 {
 public:
@@ -283,6 +291,90 @@ public:
 private:
 	TArray<BYTE> _buffer;
 	int32 _writeSize = 0;
+};
+
+// Seq 정보를 담은 벡터
+template <typename T>
+class TSeqVector
+{
+	struct TSeqItem
+	{
+		TSeqItem()
+		{
+
+		};
+
+		TSeqItem(T& Item, int nSeq) : Item(Item), nSeq(nSeq)
+		{
+
+		};
+
+		T Item;
+		int32 nSeq = 0;
+		bool bValid = false;
+	};
+
+	TSeqVector()
+	{
+		buffSize = 1024;
+		left = 0;
+		right = 0;
+		topSeq = -1;
+		v.SetNum(buffSize);
+	}
+
+public:
+	void Push(int32 nSeq, T& item)
+	{
+		int32 topSeq = v[right].nSeq;
+
+		if (nSeq > topSeq)
+		{
+			int32 cnt = nSeq - topSeq;
+
+			// 자리가 없으면 삭제
+			// 오버플로우나면 그냥 운이 없는걸로,,
+			if (right + cnt - 1 >= buffSize)
+				Prune();
+		}
+
+		v[right + cnt - 1] = TSeqItem{ item, nSeq };
+		right += cnt;
+	}
+
+	bool Pop(T& item)
+	{
+		if (IsEmpty())
+			return false;
+
+		item = v[left++];
+		return true;
+	}
+
+	void Prune()
+	{
+		int32 size = right - left;
+		FMemory::Memcpy(v.GetData(), v.GetData() + left, size);
+		right = size;
+		left = 0;
+	}
+
+	void Clear()
+	{
+		v.Empty();
+		valid.Empty();
+	}
+
+	bool IsEmpty()
+	{
+		return left == right;
+	}
+
+private:
+	TArray<T> v;
+	int32 buffSize;
+	int32 left;
+	int32 right;
 };
 
 class SERVERP1_API RecvWorker : public FRunnable
@@ -342,6 +434,8 @@ public:
 	void Run();
 	void Recv();
 
+	void PushRecvPacket(TArray<uint8>& RecvPacket);
+
 	void HandleRecvPackets();	// Delayed Out Buffer
 
 	void HandlePacket(TArray<uint8>& Packet);
@@ -351,9 +445,9 @@ public:
 	void SendPacket(SendBufferRef SendBuffer);
 	
 	template<typename T>
-	static SendBufferRef MakeSendBuffer(T& pkt, uint16 pktId)
+	static SendBufferRef MakeSendBuffer(T& pkt, uint16 pktId, int32 nSeq)
 	{
-		const uint16 dataSize = static_cast<uint16>(pkt.ByteSizeLong());
+		const uint16 dataSize = static_cast<uint16>(pkt.ByteSize());
 		const uint16 packetSize = dataSize + sizeof(FPacketHeader);
 
 		SendBufferRef sendBuffer = MakeShared<SendBuffer>(packetSize);
@@ -364,32 +458,16 @@ public:
 
 		switch (pktId)
 		{
-		case EPacketType::Lockstep:
-		{
-
-		}
-			break;
-
-		case EPacketType::Snapshot:
-		{
-
-		}
-			break;
-
-		case EPacketType::Sync:	
-		{
-
-		}
-			break;
-			
 		case EPacketType::Ack:
-		{
-			
-		}
+			pkt.nAck = nSeq;
+		case EPacketType::Lockstep:
+		case EPacketType::Snapshot:
+		case EPacketType::Sync:	
+			pkt.nSeq = nSeq;
 			break;
 		}
 		
-		pkt.SerializeToArray(&header[1], dataSize);
+		pkt.Serialize(&header[1]); // 원래는 datasize를 넣어서 오버플로우 방지
 		sendBuffer->Close(packetSize);
 
 		return sendBuffer;
@@ -401,8 +479,10 @@ public:
 	TSharedPtr<class RecvWorker> RecvWorkerThread;
 	TSharedPtr<class SendWorker> SendWorkerThread;
 
-	TQueue<TArray<uint8>> RecvPacketQueue;
+	//TQueue<TArray<uint8>> RecvPacketQueue;
+	TSeqVector<TArray<uint8>> RecvPacketQueue;
 	TQueue<SendBufferRef> SendPacketQueue;
 
 	bool bServer;
+	int32 nCurSeq = 0;
 };
