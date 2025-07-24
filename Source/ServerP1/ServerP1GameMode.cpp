@@ -269,15 +269,15 @@ void AServerP1GameMode::TickLockstep(float DeltaTime)
 
 void AServerP1GameMode::TickSync(float DeltaTime)
 {
-	__noop;
+//	__noop;
 }
 
 void AServerP1GameMode::TickSnapshot(float DeltaTime)
 {
-	__noop;
+//	__noop;
 }
 
 void AServerP1GameMode::TickAck(float DeltaTime)
 {
-	__noop;
+//	__noop;
 }
