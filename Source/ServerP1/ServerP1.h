@@ -21,6 +21,8 @@ USING_SHARED_PTR(PacketSession);
 
 #define BYTE uint8
 
+#include "Templates/SharedPointer.h"
+
 class FSocket;
 
 	enum EMySocketType
@@ -36,7 +38,7 @@ class FSocket;
 		Ack,
 	};
 
-	struct SERVERP1_API FPacketHeader
+	struct FPacketHeader
 	{
 		FPacketHeader() : PacketSize(0), PacketID(0)
 		{
@@ -78,6 +80,8 @@ class FSocket;
 
 	struct IPacket
 	{
+    uint16 nSeq;
+    
 		virtual void Serialize(uint8* ptr) { }
 		virtual void Deserialize(uint8* ptr) { }
 		virtual uint16 ByteSize() { return 0; }
@@ -85,7 +89,6 @@ class FSocket;
 
 	struct FLockstepPacket : public IPacket
 	{
-		uint16 nSeq;
 		FMyInput input;
 
 		virtual void Serialize(uint8* ptr)
@@ -110,7 +113,6 @@ class FSocket;
 
 	struct FSyncPacket : public IPacket
 	{
-		uint16 nSeq;
 		uint16 nInputSize;
 		TArray<FMyInput> inputs;
 		uint16 nStateSize;
@@ -192,7 +194,6 @@ class FSocket;
 
 	struct FSnapshotPacket : public IPacket
 	{
-		uint16 nSeq;
 		uint16 nStateSize;
 		TArray<FMyState> states;
 
@@ -247,7 +248,6 @@ class FSocket;
 
 	struct FAckPacket : public IPacket
 	{
-		uint16 nSeq;
 		uint16 nAck;
 		// nSeq랑 nAck는 똑같이
 
@@ -306,7 +306,7 @@ class TSeqVector
 
 		TSeqItem(T& Item, int nSeq) : Item(Item), nSeq(nSeq)
 		{
-
+      bValid = true;
 		};
 
 		T Item;
@@ -314,32 +314,33 @@ class TSeqVector
 		bool bValid = false;
 	};
 
-	TSeqVector()
+public:
+  
+  TSeqVector()
 	{
-		buffSize = 1024;
+    bufferSize = 1024;
 		left = 0;
 		right = 0;
 		topSeq = -1;
-		v.SetNum(buffSize);
+		v.SetNum(bufferSize);
+    v[0].nSeq = 0;
 	}
 
 public:
 	void Push(int32 nSeq, T& item)
 	{
-		int32 topSeq = v[right].nSeq;
-
-		if (nSeq > topSeq)
-		{
-			int32 cnt = nSeq - topSeq;
-
-			// 자리가 없으면 삭제
-			// 오버플로우나면 그냥 운이 없는걸로,,
-			if (right + cnt - 1 >= buffSize)
-				Prune();
-		}
-
-		v[right + cnt - 1] = TSeqItem{ item, nSeq };
-		right += cnt;
+    int32 index = nSeq % bufferSize;
+    
+    if (nSeq < v[left].nSeq + bufferSize)
+    {
+      v[index] = TSeqItem{ item, nSeq };
+    }
+		
+    if (nSeq > topSeq && nSeq < v[left].nSeq + bufferSize)
+    {
+      right = (index + 1) % bufferSize;
+      topSeq = nSeq;
+    }
 	}
 
 	bool Pop(T& item)
@@ -347,22 +348,19 @@ public:
 		if (IsEmpty())
 			return false;
 
-		item = v[left++];
+    if (v[left].bValid == false)
+      return false;
+    
+    v[left].bValid = false;
+		item = v[left].Item;
+    left = (left + 1) % bufferSize;
+
 		return true;
 	}
-
-	void Prune()
-	{
-		int32 size = right - left;
-		FMemory::Memcpy(v.GetData(), v.GetData() + left, size);
-		right = size;
-		left = 0;
-	}
-
+  
 	void Clear()
 	{
 		v.Empty();
-		valid.Empty();
 	}
 
 	bool IsEmpty()
@@ -371,10 +369,11 @@ public:
 	}
 
 private:
-	TArray<T> v;
-	int32 buffSize;
+	TArray<TSeqItem> v;
+	int32 bufferSize;
 	int32 left;
 	int32 right;
+  int32 topSeq;
 };
 
 class SERVERP1_API RecvWorker : public FRunnable
@@ -428,7 +427,7 @@ protected:
 class SERVERP1_API PacketSession : public TSharedFromThis<PacketSession>
 {
 public:
-	PacketSession(FSocket* Socket, bool bServer);
+	PacketSession(FSocket* Socket, bool bServer, TSharedRef<FInternetAddr> RemoteAddr);
 	~PacketSession();
 
 	void Run();
@@ -459,15 +458,14 @@ public:
 		switch (pktId)
 		{
 		case EPacketType::Ack:
-			pkt.nAck = nSeq;
 		case EPacketType::Lockstep:
 		case EPacketType::Snapshot:
-		case EPacketType::Sync:	
+		case EPacketType::Sync:
 			pkt.nSeq = nSeq;
 			break;
 		}
 		
-		pkt.Serialize(&header[1]); // 원래는 datasize를 넣어서 오버플로우 방지
+		pkt.Serialize((uint8*)&header[1]); // 원래는 datasize를 넣어서 오버플로우 방지
 		sendBuffer->Close(packetSize);
 
 		return sendBuffer;
@@ -485,4 +483,5 @@ public:
 
 	bool bServer;
 	int32 nCurSeq = 0;
+  TSharedRef<FInternetAddr> RemoteAddr;
 };

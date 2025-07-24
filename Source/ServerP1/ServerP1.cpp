@@ -32,7 +32,7 @@ void SendBuffer::Close(uint32 writeSize)
 
 // Session
 
-PacketSession::PacketSession(class FSocket* Socket, bool bServer) : Socket(Socket), bServer(bServer)
+PacketSession::PacketSession(class FSocket* Socket, bool bServer, TSharedRef<FInternetAddr> RemoteAddr) : Socket(Socket), bServer(bServer), RemoteAddr(RemoteAddr)
 {
 
 }
@@ -44,8 +44,8 @@ PacketSession::~PacketSession()
 
 void PacketSession::Run()
 {
-	RecvWorkerThread = MakeShared<RecvWorker>(Socket, AsShared());
-	SendWorkerThread = MakeShared<SendWorker>(Socket, AsShared());
+	RecvWorkerThread = MakeShared<RecvWorker>(Socket, AsShared(), RemoteAddr);
+	SendWorkerThread = MakeShared<SendWorker>(Socket, AsShared(), RemoteAddr);
 }
 
 void PacketSession::Recv()
@@ -96,7 +96,7 @@ void PacketSession::HandleServerPacket(TArray<uint8>& Packet)
 	{
 	case EPacketType::Ack:
 	{
-		FAckPacket* pkt = Cast<FAckPacket>(&header[1]);
+		FAckPacket* pkt = reinterpret_cast<FAckPacket*>(&header[1]);
 		gameInstance->HandleAck(pkt);
 	}
 	}
@@ -118,28 +118,28 @@ void PacketSession::HandleClientPacket(TArray<uint8>& Packet)
   {
     case EPacketType::Lockstep:
     {
-		FLockstepPacket* pkt = Cast<FLockstepPacket>(&header[1]);
+		FLockstepPacket* pkt = reinterpret_cast<FLockstepPacket*>(&header[1]);
 		gameInstance->HandleLockstep(pkt);
     }
       break;
 
     case EPacketType::Snapshot:
     {
-		FSnapshotPacket* pkt = Cast<FSnapshotPacket>(&header[1]);
+		FSnapshotPacket* pkt = reinterpret_cast<FSnapshotPacket*>(&header[1]);
 		gameInstance->HandleSnapshot(pkt);
     }
       break;
 
     case EPacketType::Sync:
     {
-		FSyncPacket* pkt = Cast<FSyncPacket>(&header[1]);
+		FSyncPacket* pkt = reinterpret_cast<FSyncPacket*>(&header[1]);
 		gameInstance->HandleSync(pkt);
     }
       break;
       
     case EPacketType::Ack:
     {
-		FAckPacket* pkt = Cast<FAckPacket>(&header[1]);
+		FAckPacket* pkt = reinterpret_cast<FAckPacket*>(&header[1]);
 		gameInstance->HandleAck(pkt);
     }
       break;
@@ -182,10 +182,12 @@ uint32 RecvWorker::Run()
 		{
 			if (TSharedPtr<PacketSession> Session = SessionRef.Pin())
 			{
-				Session->RecvPacketQueue.Enqueue(Packet);
+        FPacketHeader* header = reinterpret_cast<FPacketHeader*>(Packet.GetData());
+        IPacket* packet = reinterpret_cast<IPacket*>(&header[1]);
+        
+				Session->RecvPacketQueue.Push(packet->nSeq, Packet);
 			}
 		}
-
 	}
 
 	return 0;
@@ -244,6 +246,7 @@ bool RecvWorker::ReceiveDesiredBytes(uint8* Results, int32 Size)
 	while (Size > 0)
 	{
 		int32 NumRead = 0;
+    
 		Socket->RecvFrom(Results + offset, Size, OUT NumRead, RemoteAddr.Get());
 		check(NumRead <= Size);
 
