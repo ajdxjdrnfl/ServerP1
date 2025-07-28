@@ -26,7 +26,8 @@ void UMyGameInstance::InitSocket(bool bServer)
 	// 귀찮으니 에디터 번호로 서버 판단
 	// 0 - 서버
 	// 1 - 클라
-	int32 pieID = GetWorld()->GetPackage()->PIEInstanceID;
+  UPackage* WorldPackage = GetWorld()->GetOutermost();
+	int32 pieID = WorldPackage->GetPIEInstanceID();
 	if (pieID == 0)
 		bIsServer = true;
 	else bIsServer = false;
@@ -37,7 +38,7 @@ void UMyGameInstance::InitSocket(bool bServer)
 	InternetAddr->SetPort(Port);
 
 	{
-		mySession = MakeShared<PacketSession>(Socket, bServer);
+		mySession = MakeShared<PacketSession>(Socket, bServer, InternetAddr);
 		mySession->Run();
 
 		AServerP1GameMode* gameMode = Cast<AServerP1GameMode>(GetWorld()->GetAuthGameMode());
@@ -59,7 +60,7 @@ void UMyGameInstance::SendPacket(SendBufferRef buffer)
 
 void UMyGameInstance::HandleRecvPacket()
 {
-	__noop;
+//	__noop;
 }
 
 void UMyGameInstance::HandleLockstep(FLockstepPacket* pkt)
