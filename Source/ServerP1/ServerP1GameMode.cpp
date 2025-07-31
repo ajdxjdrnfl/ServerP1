@@ -5,36 +5,34 @@
 #include "MyGameInstance.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Physics/Experimental/PhysScene_Chaos.h"
+#include "Kismet/GameplayStatics.h"
 
-AServerP1GameMode::AServerP1GameMode()
+AServerP1GameMode::AServerP1GameMode(const FObjectInitializer& ObjectInitializer)
+	:Super(ObjectInitializer)
 {
-	// set default pawn class to our Blueprinted character
-	/*
-	static ConstructorHelpers::FClassFinder<APawn> PlayerPawnBPClass(TEXT("/Game/ThirdPerson/Blueprints/BP_ThirdPersonCharacter"));
-	if (PlayerPawnBPClass.Class != NULL)
-	{
-		DefaultPawnClass = PlayerPawnBPClass.Class;
-	}
-	*/
-
 	fFrameTime = 1.f / float(frameCountPerSecond);
-
+	PrimaryActorTick.bCanEverTick = true;
 	nCurSeq = 0;
 }
 
 void AServerP1GameMode::SpawnCubePawn()
 {
-	FVector Location = FVector(0.f, 0.f, 0.f);
 	FRotator Rotation = FRotator::ZeroRotator;
 
-	playerCube = GetWorld()->SpawnActor<ACubePawn>(PlayerClass, Location, Rotation);
+	playerCube = GetWorld()->SpawnActor<ACubePawn>(PlayerClass, Origin, Rotation);
+	APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0);
+
+	if (PC && playerCube)
+	{
+		PC->Possess(playerCube);
+	}
 }
 
 void AServerP1GameMode::SpawnCubes()
 {
 	FRotator Rotation = FRotator::ZeroRotator;
-	int width = 100;
-	int height = 100;
+	int width = 400;
+	int height = 400;
 	for (int i = 0; i < maxRow; i++)
 	{
 		for (int j = 0; j < maxCol; j++)
@@ -42,10 +40,17 @@ void AServerP1GameMode::SpawnCubes()
 			int x = i - (maxRow / 2);
 			int y = j - (maxCol / 2);
 			FVector Location = FVector(x * width, y * height, 0.f);
-			AActor* actor = GetWorld()->SpawnActor<AActor>(CubeClass, Location, Rotation);
+			AActor* actor = GetWorld()->SpawnActor<AActor>(CubeClass, Origin + Location, Rotation);
 			spawnedCubes.Push(actor);
 		}
 	}
+}
+
+void AServerP1GameMode::BeginPlay()
+{
+	Super::BeginPlay();
+	//PrimaryActorTick.bCanEverTick = true;
+	//PrimaryActorTick.SetTickFunctionEnable(true);
 }
 
 void AServerP1GameMode::Tick(float DeltaTime)
@@ -57,7 +62,7 @@ void AServerP1GameMode::Tick(float DeltaTime)
 	// 물리에 관한 Tick 처리
 	while (fElapsed >= fFrameTime)
 	{
-		float dt = FMath::Min(fFrameTime, fElapsed);
+		float dt = fFrameTime;
 
 		HandleTick(dt);
 		fElapsed -= fFrameTime;
@@ -66,14 +71,16 @@ void AServerP1GameMode::Tick(float DeltaTime)
 
 void AServerP1GameMode::ApplyInput(FMyInput& input, float deltaTime)
 {
+	float scale = 100.f;
+	float speed = scale * deltaTime;
 	if (input.up)
-		playerCube->MoveVertical(deltaTime);
+		playerCube->MoveVertical(speed);
 	if (input.down)
-		playerCube->MoveVertical(-deltaTime);
+		playerCube->MoveVertical(-speed);
 	if (input.left)
-		playerCube->MoveHorizontal(deltaTime);
+		playerCube->MoveHorizontal(speed);
 	if (input.right)
-		playerCube->MoveHorizontal(-deltaTime);
+		playerCube->MoveHorizontal(-speed);
 	if (input.jump)
 		playerCube->Jump();
 }
@@ -195,7 +202,7 @@ void AServerP1GameMode::HandleTick_Svr(float DeltaTime)
 		FMyInput curInput = playerCube->GetCurInput();
 		InsertInput(nCurSeq++, curInput);
 		playerCube->ClearInput();
-
+		
 		{
 			FLockstepPacket pkt;
 			pkt.nSeq = nCurSeq;
@@ -203,6 +210,7 @@ void AServerP1GameMode::HandleTick_Svr(float DeltaTime)
 			SendBufferRef sendBuffer = PacketSession::MakeSendBuffer(pkt, EPacketType::Lockstep, gameInstance->GetCurrentSeq());
 			SEND_PACKET(sendBuffer);
 		}
+		
 	}
 
 	// 스테이트 Insert

@@ -6,6 +6,7 @@
 #include "Sockets.h"
 #include "Kismet/GameplayStatics.h"
 #include "MyGameInstance.h"
+#include "SocketSubsystem.h"
 
 IMPLEMENT_PRIMARY_GAME_MODULE( FDefaultGameModuleImpl, ServerP1, "ServerP1" );
 
@@ -39,7 +40,7 @@ PacketSession::PacketSession(class FSocket* Socket, bool bServer, TSharedRef<FIn
 
 PacketSession::~PacketSession()
 {
-	
+	Destroy();
 }
 
 void PacketSession::Run()
@@ -154,9 +155,24 @@ void PacketSession::SendPacket(SendBufferRef SendBuffer)
 	SendPacketQueue.Enqueue(SendBuffer);
 }
 
+void PacketSession::Destroy()
+{
+	if (RecvWorkerThread)
+	{
+		RecvWorkerThread->Destroy();
+		RecvWorkerThread = nullptr;
+	}
+
+	if (SendWorkerThread)
+	{
+		SendWorkerThread->Destroy();
+		SendWorkerThread = nullptr;
+	}
+}
+
 // Worker
 
-RecvWorker::RecvWorker(FSocket* Socket, TSharedPtr<class PacketSession> Session, TSharedRef<FInternetAddr> RemoteAddr) : Socket(Socket), SessionRef(Session), RemoteAddr(RemoteAddr)
+RecvWorker::RecvWorker(FSocket* Socket, TSharedPtr<class PacketSession> Session, TSharedRef<FInternetAddr> RemoteAddr) : Socket(Socket), SessionRef(Session), RemoteAddr(RemoteAddr), SenderAddr(ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->CreateInternetAddr())
 {
 	Thread = FRunnableThread::Create(this, TEXT("RecvWorkerThread"));
 }
@@ -182,8 +198,8 @@ uint32 RecvWorker::Run()
 		{
 			if (TSharedPtr<PacketSession> Session = SessionRef.Pin())
 			{
-        FPacketHeader* header = reinterpret_cast<FPacketHeader*>(Packet.GetData());
-        IPacket* packet = reinterpret_cast<IPacket*>(&header[1]);
+			FPacketHeader* header = reinterpret_cast<FPacketHeader*>(Packet.GetData());
+			IPacket* packet = reinterpret_cast<IPacket*>(&header[1]);
         
 				Session->RecvPacketQueue.Push(packet->nSeq, Packet);
 			}
@@ -246,8 +262,7 @@ bool RecvWorker::ReceiveDesiredBytes(uint8* Results, int32 Size)
 	while (Size > 0)
 	{
 		int32 NumRead = 0;
-    
-		Socket->RecvFrom(Results + offset, Size, OUT NumRead, RemoteAddr.Get());
+		Socket->RecvFrom(Results + offset, Size, OUT NumRead, *SenderAddr);
 		check(NumRead <= Size);
 
 		if (NumRead <= 0)

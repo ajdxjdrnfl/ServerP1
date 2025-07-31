@@ -9,33 +9,44 @@
 
 void UMyGameInstance::InitSocket(bool bServer)
 {
-	Socket = FUdpSocketBuilder(TEXT("UDPSocket"))
-		.AsNonBlocking()
-		.AsReusable()
-		.WithBroadcast()
-		.WithReceiveBufferSize(maxSize); // 2MB
 
-	FIPv4Address Ip;
-	FIPv4Address::Parse(IpAddress, Ip);
-
-	TSharedRef<FInternetAddr> InternetAddr = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->CreateInternetAddr();
-	InternetAddr->SetIp(Ip.Value);
-	
-	int16 Port = serverPort;
-	
 	// 귀찮으니 에디터 번호로 서버 판단
 	// 0 - 서버
 	// 1 - 클라
-  UPackage* WorldPackage = GetWorld()->GetOutermost();
+	UPackage* WorldPackage = GetWorld()->GetOutermost();
 	int32 pieID = WorldPackage->GetPIEInstanceID();
 	if (pieID == 0)
 		bIsServer = true;
 	else bIsServer = false;
 
-	if (!bServer)
-		Port = clientPort;
+	int16 myPort = serverPort;
+	int16 remotePort = clientPort;
 
-	InternetAddr->SetPort(Port);
+	if (!bServer)
+	{
+		myPort = clientPort;
+		remotePort = serverPort;
+	}
+
+
+	Socket = FUdpSocketBuilder(TEXT("UDPSocket"))
+		.AsNonBlocking()
+		.AsReusable()
+		.WithBroadcast()
+		.BoundToPort(myPort)
+		.WithReceiveBufferSize(maxSize); // 2MB
+
+
+	FIPv4Address Ip;
+	FIPv4Address::Parse(IpAddress, Ip);
+
+	// 목적지 설정
+	TSharedRef<FInternetAddr> InternetAddr = ISocketSubsystem::Get(PLATFORM_SOCKETSUBSYSTEM)->CreateInternetAddr();
+	InternetAddr->SetIp(Ip.Value);
+	
+	
+
+	InternetAddr->SetPort(remotePort);
 
 	{
 		mySession = MakeShared<PacketSession>(Socket, bServer, InternetAddr);
@@ -60,7 +71,8 @@ void UMyGameInstance::SendPacket(SendBufferRef buffer)
 
 void UMyGameInstance::HandleRecvPacket()
 {
-//	__noop;
+	if (mySession)
+		mySession->HandleRecvPackets();
 }
 
 void UMyGameInstance::HandleLockstep(FLockstepPacket* pkt)

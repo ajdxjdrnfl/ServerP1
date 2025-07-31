@@ -20,6 +20,7 @@ class SERVERP1_API UMyGameInstance : public UGameInstance
 	GENERATED_BODY()
 
 public:
+	UFUNCTION(BlueprintCallable)
 	void InitSocket(bool bServer = true);
 
 	UFUNCTION(BlueprintCallable)

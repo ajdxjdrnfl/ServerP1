@@ -14,8 +14,9 @@ class AServerP1GameMode : public AGameModeBase
 	GENERATED_BODY()
 
 public:
-	AServerP1GameMode();
-
+	AServerP1GameMode(const FObjectInitializer& ObjectInitializer);
+	
+	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
 	
 public:
@@ -29,8 +30,8 @@ public:
 	float fElapsed = 0.f;
 	float fFrameTime = 1.f;
 
-	int32 maxCol = 5;
-	int32 maxRow = 6;
+	int32 maxCol = 3;
+	int32 maxRow = 3;
 
 	UPROPERTY(EditAnywhere)
 	TSubclassOf<ACubePawn> PlayerClass;
@@ -38,6 +39,10 @@ public:
 	UPROPERTY(EditDefaultsOnly)
 	TSubclassOf<AActor> CubeClass;
 
+	UPROPERTY(EditAnywhere)
+	FVector Origin {
+		1000.f, 1000.f, 1000.f
+	};
 	// World에 Spawn된 오브젝트
 public:
 	TArray<AActor*> spawnedCubes;
